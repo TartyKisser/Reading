@@ -280,7 +280,7 @@
         // 加载书籍列表
         async function loadBookList() {
             try {
-                const response = await fetch('Reading/booklist.json');
+                const response = await fetch('/Reading/booklist.json');
                 if (!response.ok) {
                     throw new Error('无法加载书籍列表');
                 }
@@ -335,7 +335,7 @@
             readerContent.innerHTML = '<div class="loading">正在加载书籍内容...</div>';
             
             try {
-                const response = await fetch(`Reading/books/${book.filename}`);
+                const response = await fetch(`/Reading/books/${book.filename}`);
                 if (!response.ok) {
                     throw new Error('无法加载书籍内容');
                 }
