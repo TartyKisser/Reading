@@ -288,8 +288,123 @@
         let books = [];
         let currentFontSize = 16;
         let isDarkMode = false;
+        let currentBookIndex = -1;
+        let autoSaveInterval = null;
 
-        // 获取基础路径
+        // 保存阅读进度
+        function saveReadingProgress() {
+            if (currentBookIndex >= 0 && currentBookIndex < books.length) {
+                const book = books[currentBookIndex];
+                const readerContent = document.getElementById('readerContent');
+                const progress = {
+                    bookIndex: currentBookIndex,
+                    bookTitle: book.title,
+                    bookFilename: book.filename,
+                    scrollPosition: readerContent.scrollTop,
+                    scrollHeight: readerContent.scrollHeight,
+                    percentage: Math.round((readerContent.scrollTop / (readerContent.scrollHeight - readerContent.clientHeight)) * 100) || 0,
+                    fontSize: currentFontSize,
+                    isDarkMode: isDarkMode,
+                    timestamp: new Date().toISOString()
+                };
+                
+                // 保存当前书籍的进度
+                localStorage.setItem(`reading_progress_${book.filename}`, JSON.stringify(progress));
+                
+                // 保存最后阅读的书籍
+                localStorage.setItem('last_reading_book', book.filename);
+                
+                console.log(`已保存《${book.title}》的阅读进度: ${progress.percentage}%`);
+            }
+        }
+
+        // 加载阅读进度
+        function loadReadingProgress(bookFilename) {
+            const savedProgress = localStorage.getItem(`reading_progress_${bookFilename}`);
+            if (savedProgress) {
+                const progress = JSON.parse(savedProgress);
+                console.log(`找到《${progress.bookTitle}》的阅读记录，进度: ${progress.percentage}%`);
+                return progress;
+            }
+            return null;
+        }
+
+        // 恢复阅读进度
+        function restoreReadingProgress(progress) {
+            if (progress) {
+                const readerContent = document.getElementById('readerContent');
+                
+                // 恢复字体大小
+                if (progress.fontSize) {
+                    currentFontSize = progress.fontSize;
+                    readerContent.style.fontSize = currentFontSize + 'px';
+                }
+                
+                // 恢复主题
+                if (progress.isDarkMode !== undefined && progress.isDarkMode !== isDarkMode) {
+                    toggleTheme();
+                }
+                
+                // 恢复滚动位置（需要等待内容加载完成）
+                setTimeout(() => {
+                    readerContent.scrollTop = progress.scrollPosition;
+                    
+                    // 显示进度提示
+                    showProgressNotification(`已恢复到上次阅读位置 (${progress.percentage}%)`);
+                }, 100);
+            }
+        }
+
+        // 显示进度提示
+        function showProgressNotification(message) {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                z-index: 10000;
+                animation: slideInRight 0.3s ease;
+                font-size: 14px;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.animation = 'slideOutRight 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // 添加CSS动画
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideInRight {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            @keyframes slideOutRight {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
         function getBasePath() {
             // 获取当前页面的路径
             const path = window.location.pathname;
@@ -376,20 +491,42 @@
                 return;
             }
 
-            bookshelf.innerHTML = books.map((book, index) => `
-                <div class="book-card" onclick="openBook(${index})">
+            // 获取最后阅读的书籍
+            const lastReadingBook = localStorage.getItem('last_reading_book');
+
+            bookshelf.innerHTML = books.map((book, index) => {
+                const progress = loadReadingProgress(book.filename);
+                const isLastRead = book.filename === lastReadingBook;
+                
+                return `
+                <div class="book-card ${isLastRead ? 'last-read' : ''}" onclick="openBook(${index})" style="${isLastRead ? 'border: 2px solid #667eea;' : ''}">
                     <div class="book-title">${book.title}</div>
                     <div class="book-info">
                         ${book.author ? `作者：${book.author}<br>` : ''}
-                        ${book.size ? `大小：${book.size}` : ''}
+                        ${book.size ? `大小：${book.size}<br>` : ''}
+                        ${progress ? `<span style="color: #667eea; font-weight: bold;">📖 已读 ${progress.percentage}%</span>` : '<span style="color: #999;">📖 未读</span>'}
                     </div>
+                    ${isLastRead ? '<div style="position: absolute; top: 5px; right: 5px; background: #667eea; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">继续阅读</div>' : ''}
                 </div>
-            `).join('');
+            `;
+            }).join('');
+            
+            // 添加一键继续阅读的提示
+            if (lastReadingBook) {
+                const lastBookIndex = books.findIndex(book => book.filename === lastReadingBook);
+                if (lastBookIndex >= 0) {
+                    const progress = loadReadingProgress(lastReadingBook);
+                    if (progress && progress.percentage > 0) {
+                        showProgressNotification(`上次阅读：《${books[lastBookIndex].title}》 ${progress.percentage}%`);
+                    }
+                }
+            }
         }
 
         // 打开书籍
         async function openBook(index) {
             const book = books[index];
+            currentBookIndex = index;
             const reader = document.getElementById('reader');
             const readerTitle = document.getElementById('readerTitle');
             const readerContent = document.getElementById('readerContent');
@@ -428,8 +565,20 @@
                 
                 readerContent.innerHTML = formattedText || '<p>书籍内容为空</p>';
                 
-                // 滚动到顶部
-                readerContent.scrollTop = 0;
+                // 检查是否有保存的阅读进度
+                const savedProgress = loadReadingProgress(book.filename);
+                if (savedProgress) {
+                    restoreReadingProgress(savedProgress);
+                } else {
+                    // 如果没有进度，滚动到顶部
+                    readerContent.scrollTop = 0;
+                }
+                
+                // 启动自动保存进度
+                startAutoSave();
+                
+                // 添加滚动事件监听器，实时保存进度
+                readerContent.onscroll = debounce(saveReadingProgress, 1000);
                 
             } catch (error) {
                 console.error('加载书籍失败:', error);
@@ -443,11 +592,50 @@
             }
         }
 
+        // 防抖函数，避免频繁保存
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // 启动自动保存
+        function startAutoSave() {
+            // 清除之前的定时器
+            if (autoSaveInterval) {
+                clearInterval(autoSaveInterval);
+            }
+            
+            // 每30秒自动保存一次进度
+            autoSaveInterval = setInterval(saveReadingProgress, 30000);
+        }
+
+        // 停止自动保存
+        function stopAutoSave() {
+            if (autoSaveInterval) {
+                clearInterval(autoSaveInterval);
+                autoSaveInterval = null;
+            }
+        }
+
         // 关闭阅读器
         function closeReader() {
+            // 保存进度后再关闭
+            saveReadingProgress();
+            stopAutoSave();
+            
             document.getElementById('reader').style.display = 'none';
             document.getElementById('bookshelf').style.display = 'grid';
             document.getElementById('setupGuide').style.display = 'block';
+            
+            // 刷新书架显示，更新进度信息
+            displayBooks();
         }
 
         // 改变字体大小
@@ -475,6 +663,13 @@
 
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', loadBookList);
+        
+        // 页面关闭或刷新时保存进度
+        window.addEventListener('beforeunload', () => {
+            if (currentBookIndex >= 0) {
+                saveReadingProgress();
+            }
+        });
     </script>
 </body>
 </html>
