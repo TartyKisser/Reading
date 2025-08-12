@@ -238,6 +238,17 @@
             border-radius: 5px;
             margin: 20px 0;
         }
+
+        /* 调试信息样式 */
+        .debug-info {
+            background: rgba(255,255,255,0.9);
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -247,6 +258,7 @@
         <div class="setup-guide" id="setupGuide">
             <h2>⚙️ 使用说明</h2>
             我的瑞琪宝宝的电子书库💗，点击对应书名即可阅读
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
         </div>
 
         <div class="bookshelf" id="bookshelf">
@@ -277,22 +289,81 @@
         let currentFontSize = 16;
         let isDarkMode = false;
 
+        // 获取基础路径
+        function getBasePath() {
+            // 获取当前页面的路径
+            const path = window.location.pathname;
+            
+            // 如果是GitHub Pages，路径会包含仓库名
+            // 例如: /Reading/ 或 /Reading/index.html
+            if (path.includes('/Reading')) {
+                return '/Reading';
+            }
+            
+            // 如果是本地测试（Live Server等）
+            // 路径可能是 / 或 /index.html
+            return '';
+        }
+
+        // 显示调试信息（可选，用于排查问题）
+        function showDebugInfo() {
+            const debugDiv = document.getElementById('debugInfo');
+            const basePath = getBasePath();
+            debugDiv.innerHTML = `
+                <strong>调试信息：</strong><br>
+                当前URL: ${window.location.href}<br>
+                路径: ${window.location.pathname}<br>
+                基础路径: ${basePath}<br>
+                booklist.json路径: ${basePath}/booklist.json<br>
+            `;
+            // 如果需要查看调试信息，将下一行的 display: none 改为 display: block
+            debugDiv.style.display = 'none';
+        }
+
         // 加载书籍列表
         async function loadBookList() {
             try {
-                const response = await fetch('/Reading/booklist.json');
+                showDebugInfo();
+                
+                const basePath = getBasePath();
+                const booklistPath = basePath ? `${basePath}/booklist.json` : 'booklist.json';
+                
+                console.log('正在加载书籍列表:', booklistPath);
+                console.log('完整URL:', window.location.origin + booklistPath);
+                
+                const response = await fetch(booklistPath);
+                
                 if (!response.ok) {
-                    throw new Error('无法加载书籍列表');
+                    throw new Error(`HTTP错误! 状态: ${response.status}`);
                 }
-                books = await response.json();
+                
+                const text = await response.text();
+                console.log('响应内容预览:', text.substring(0, 200));
+                
+                books = JSON.parse(text);
+                console.log('成功加载书籍数量:', books.length);
+                
                 displayBooks();
             } catch (error) {
                 console.error('加载书籍列表失败:', error);
-                document.getElementById('bookshelf').innerHTML = `
+                
+                // 提供更详细的错误信息
+                let errorMessage = `
                     <div class="error">
-                        无法加载书籍列表。请确保 booklist.json 文件存在并格式正确。
+                        <strong>无法加载书籍列表</strong><br><br>
+                        错误信息: ${error.message}<br><br>
+                        请检查：<br>
+                        1. booklist.json 文件是否在根目录<br>
+                        2. JSON格式是否正确<br>
+                        3. GitHub Pages是否已经部署成功<br><br>
+                        当前尝试的路径: ${getBasePath()}/booklist.json
                     </div>
                 `;
+                
+                document.getElementById('bookshelf').innerHTML = errorMessage;
+                
+                // 如果加载失败，显示调试信息
+                document.getElementById('debugInfo').style.display = 'block';
             }
         }
 
@@ -335,9 +406,15 @@
             readerContent.innerHTML = '<div class="loading">正在加载书籍内容...</div>';
             
             try {
-                const response = await fetch(`/Reading/books/${book.filename}`);
+                const basePath = getBasePath();
+                const bookPath = basePath ? `${basePath}/books/${book.filename}` : `books/${book.filename}`;
+                
+                console.log('正在加载书籍:', bookPath);
+                
+                const response = await fetch(bookPath);
+                
                 if (!response.ok) {
-                    throw new Error('无法加载书籍内容');
+                    throw new Error(`无法加载书籍内容，HTTP状态: ${response.status}`);
                 }
                 
                 const text = await response.text();
@@ -358,7 +435,9 @@
                 console.error('加载书籍失败:', error);
                 readerContent.innerHTML = `
                     <div class="error">
-                        无法加载书籍内容。请确保文件 books/${book.filename} 存在。
+                        无法加载书籍内容<br><br>
+                        错误: ${error.message}<br><br>
+                        请确保文件 books/${book.filename} 存在
                     </div>
                 `;
             }
